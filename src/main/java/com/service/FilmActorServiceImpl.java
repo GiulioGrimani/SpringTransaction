@@ -29,9 +29,15 @@ public class FilmActorServiceImpl implements FilmActorService {
 	private ActorRepository actorRepository;
 
 	/*
-	 * Siccome Film e' l'owner della relazione, mi basta inserire gli Actor nella
-	 * lista di Actor del Film e inserire/aggiornare il Film. Controllero' inoltre
-	 * se ciascun Actor e' da inserire o da aggiornare
+	 * Questo metodo prende in input un DTO fatto da un FilmDTO e da una lista di
+	 * ActorDTO associati al FilmDTO, e li inserisce e/o aggiorna sul DB.
+	 * 
+	 * Restituisce una ResponseEntity di un DTO composto da un FilmDTO e dalla lista
+	 * di tutti gli ActorDTO associati.
+	 * 
+	 * Siccome Film e' l'owner della relazione, basta inserire gli Actor nella lista
+	 * di Actor del Film e inserire/aggiornare il Film. Questo significa che
+	 * verranno inseriti e/o aggiornati anche gli Actor associati al Film.
 	 */
 	@Override
 	public ResponseEntity<FilmActorsDTO> insertFilmWithActors(FilmActorsDTO filmActorsDTO) {
@@ -42,42 +48,45 @@ public class FilmActorServiceImpl implements FilmActorService {
 		List<Actor> actors = new ArrayList<>();
 		for (ActorDTO a : filmActorsDTO.getActorsDTO()) {
 			if (a.getActorId() != null) {
-				Actor tempActor = actorRepository.findById(a.getActorId()).get();
+				Actor currentActor = actorRepository.findById(a.getActorId()).get();
 				if (a.getFirstName() != null) {
-					tempActor.setFirstName(a.getFirstName());
+					currentActor.setFirstName(a.getFirstName());
 				}
 				if (a.getLastName() != null) {
-					tempActor.setLastName(a.getLastName());
+					currentActor.setLastName(a.getLastName());
 				}
-				actors.add(tempActor);
+				actors.add(currentActor);
 
 			} else {
 				actors.add(mapActorDTOToEntity(a));
 			}
 		}
 
-		// Controllo se il film e' nuovo (da inserire nel DB) o no (da recuperare dal DB
-		// per poi aggiornarlo)
+		// Controllo se il FilmDTO corrisponde ad un Film nuovo da inserire nel DB
+		// o gia' esistente e quindi da aggiornare
 		Integer filmId = filmActorsDTO.getFilmDTO().getFilmId();
 		Film film = filmId == null ? mapFilmDTOToEntity(filmActorsDTO.getFilmDTO())
 				: filmRepository.findById(filmId).get();
 
-		// E' stato recuperato dal DB, quindi va aggiornato
+		// Se e' stato recuperato dal DB, va aggiornato
 		if (filmId != null && filmActorsDTO.getFilmDTO().getTitle() != null) {
 			film.setTitle(filmActorsDTO.getFilmDTO().getTitle());
 		}
 
-		// Imposto al Film la sua lista di Actor aggiornandola (aggiungendo i nuovi
+		// Siamo pronti per aggiornare la lista di Actor del Film (aggiungendo i nuovi
 		// Actor alla lista e sostituendo quelli gia' inseriti per aggiornarli)
 		for (Actor a : actors) {
 			Integer actorId = a.getActorId();
-			// Se c'e' l'id, significa che lo devo aggiornare, quindi
-			// rimuovo quello che trovo e ci metto quello aggiornato
-			// (altrimenti nella junction table cercherei di inserire un record con una PK
-			// gia' presente)
+			// Se l'id e' presente, significa che l'Actor e' da aggiornare:
+			// conviene rimuovere tale Actor dalla lista di Actor del Film
+			// per poi inserire la sua versione aggiornata. Nota bene: aggiungere
+			// l'Actor alla lista di Actor del Film senza controllare se sia gia'
+			// presente una sua versione non aggiornata, fara' fallire il programma
+			// in quanto si cerchera' di inserire nella junction table un record
+			// con una PK gia' presente
 			if (actorId != null) {
 				for (Actor actorToUpdate : film.getActors()) {
-					if (actorToUpdate.getActorId() == actorId) {
+					if (actorToUpdate.getActorId().equals(actorId)) {
 						film.getActors().remove(actorToUpdate);
 						break;
 					}
@@ -105,8 +114,15 @@ public class FilmActorServiceImpl implements FilmActorService {
 	}
 
 	/*
-	 * Siccome Film e' l'owner della relazione, qui devo inserire l'Actor nella
-	 * lista di Actor di ciascun Film e poi aggiornare/inserire tali Film
+	 * Questo metodo prende in input un DTO fatto da un ActorDTO e da una lista di
+	 * FilmDTO associati all'ActorDTO, e li inserisce e/o aggiorna sul DB.
+	 * 
+	 * Restituisce una ResponseEntity di un DTO composto da un ActorDTO e dalla
+	 * lista di tutti i FilmDTO associati.
+	 * 
+	 * Siccome Film e' l'owner della relazione, si dovra' inserire l'Actor nella
+	 * lista di Actor di ciascun Film e poi inserire e/o aggiornare la lista di
+	 * Film.
 	 */
 	@Override
 	public ResponseEntity<ActorFilmsDTO> insertActorWithFilms(ActorFilmsDTO actorFilmsDTO) {
@@ -133,7 +149,7 @@ public class FilmActorServiceImpl implements FilmActorService {
 		Actor actor = actorId == null ? mapActorDTOToEntity(actorFilmsDTO.getActorDTO())
 				: actorRepository.findById(actorId).get();
 
-		// E' stato recuperato dal DB, quindi va aggiornato
+		// Se l'Actor e' stato recuperato dal DB, va aggiornato
 		if (actorId != null) {
 			String firstName = actorFilmsDTO.getActorDTO().getFirstName();
 			String lastName = actorFilmsDTO.getActorDTO().getLastName();
@@ -143,14 +159,14 @@ public class FilmActorServiceImpl implements FilmActorService {
 			if (lastName != null) {
 				actor.setLastName(lastName);
 			}
-			// Contestualmente, lo rimuovo dalla lista di Actor di ciascun Film,
-			// (altrimenti quando lo andro' ad aggiungere alle varie liste di Actor,
-			// di ciascun film, nella junction table cercherei di inserire un record con una
-			// PK gia' presente)
+			// Contestualmente, l'Actor va rimosso dalla lista di Actor di ciascun Film,
+			// (altrimenti, quando lo si andra' ad aggiungere alle varie liste di ciascun
+			// Film e si andranno ad inserire/aggiornare i Film, nella junction table
+			// starei cercando di inserire un record con una PK gia' presente ed il
+			// programma fallirebbe)
 			for (Film f : films) {
 				for (Actor a : f.getActors()) {
-					System.out.println(a.getActorId() + " = " + actorId);
-					if (a.getActorId() == actorId) {
+					if (a.getActorId().equals(actorId)) {
 						f.getActors().remove(a);
 						break;
 					}
@@ -158,23 +174,39 @@ public class FilmActorServiceImpl implements FilmActorService {
 			}
 		}
 
-		// Inserisco/aggiorno l'actor
+		// Conviene ora inserire\aggiornare l'Actor per averne eventualmente l'id
+		// e per avere la sua versione aggiornata da inserire nella lista di ciascun
+		// Film
 		actorRepository.save(actor);
 
 		// Aggiungo tale Actor alla lista di Actor di ciascun Film per poi
 		// fare il save (insert/update) di ciascun Film. Costruisco inoltre il DTO
-		// da restituire aggiungendo ad una lista di FilmDTO il mapping di tale Film
-		List<FilmDTO> processedFilm = new ArrayList<>();
+		// da restituire aggiungendo ad una lista di FilmDTO il mapping di tale Film.
+		// Per costruire la lista di FilmDTO da restituire, prendo prima tutti i Film
+		// gia' associati all'Actor (andandolo a ripescare dal DB), ed a tale lista
+		// ci aggiungo quelli che sto inserendo ora
+		List<FilmDTO> filmsDTOToReturn = new ArrayList<>();
 
+		// Lista di Film gia' associati all'Actor
+		List<Film> actorFilms = actorRepository.findById(actor.getActorId()).get().getFilms();
+
+		// Mapping dei Film gia' associati
+		for (Film f : actorFilms) {
+			filmsDTOToReturn.add(mapFilmToDTO(f));
+		}
+
+		// Se l'id e' null, allora non era gia' associato e va inserito nella lista
 		for (Film f : films) {
+			boolean flag = f.getFilmId() == null;
 			f.getActors().add(actor);
-			Film currentFilm = filmRepository.save(f);
-			FilmDTO currentFilmDTO = mapFilmToDTO(currentFilm);
-			processedFilm.add(currentFilmDTO);
+			filmRepository.save(f);
+			if (flag) {
+				filmsDTOToReturn.add(mapFilmToDTO(f));
+			}
 		}
 
 		// Costruisco il DTO che devo restituire
-		ActorFilmsDTO result = new ActorFilmsDTO(mapActorToDTO(actor), processedFilm);
+		ActorFilmsDTO result = new ActorFilmsDTO(mapActorToDTO(actor), filmsDTOToReturn);
 		return new ResponseEntity<ActorFilmsDTO>(result, HttpStatus.OK);
 	}
 
